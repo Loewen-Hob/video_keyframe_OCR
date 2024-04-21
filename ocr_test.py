@@ -61,15 +61,49 @@ def order_point(coor):
     sort_points = sort_points.reshape([4, 2]).astype('float32')
     return sort_points
 
-ocr_detection = pipeline(Tasks.ocr_detection, model='damo/cv_resnet18_ocr-detection-line-level_damo')
-ocr_recognition = pipeline(Tasks.ocr_recognition, model='damo/cv_convnextTiny_ocr-recognition-general_damo')
-img_path = '/root/bishe/image_OCR/禁用tset.jpg'
-image_full = cv2.imread(img_path)
-det_result = ocr_detection(image_full)
-det_result = det_result['polygons'] 
-for i in range(det_result.shape[0]):
-    pts = order_point(det_result[i])
-    image_crop = crop_image(image_full, pts)
-    result = ocr_recognition(image_crop)
-    # print("box: %s" % ','.join([str(e) for e in list(pts.reshape(-1))]))
-    print("text: %s" % result['text'])
+def process_image_to_text(img_path, output_txt='output.txt', ocr_det_model=None, ocr_recog_model=None):
+    try:
+        # Read the image from the path
+        image_full = cv2.imread(img_path)
+
+        # Check if image is loaded properly
+        if image_full is None:
+            raise ValueError("Image could not be read.")
+
+        # Perform OCR detection
+        det_result = ocr_detection(image_full)
+        det_result = det_result['polygons']
+
+        # Open a file to write the OCR results
+        with open(output_txt, 'w', encoding='utf-8') as file:
+            for i in range(det_result.shape[0]):
+                # Order points for cropping
+                pts = order_point(det_result[i])
+                
+                # Crop the image based on detected points
+                image_crop = crop_image(image_full, pts)
+                
+                # Perform OCR recognition on the cropped image
+                result = ocr_recognition(image_crop)
+                text = result['text']
+                # Write the detected text to the file
+                if isinstance(text, list):  # Check if the text is a list
+                    text = ''.join(text)   # Join all items in the list into a single string
+
+                # Write the processed text to the file
+                file.write(text + ' ')
+
+
+        print(f"OCR process completed and results are saved to '{output_txt}'.")
+    except Exception as e:
+        # In case of any error during the process, write an empty file
+        print(f"An error occurred: {str(e)}")
+        with open(output_txt, 'w') as file:
+            pass  # Creating an empty file
+
+if __name__ == '__main__':
+    img_path = '/root/bishe/image_OCR/禁用tset.jpg'
+    output_txt = '/root/bishe/image_OCR/output.txt'
+    ocr_detection = pipeline(Tasks.ocr_detection, model='damo/cv_resnet18_ocr-detection-line-level_damo')
+    ocr_recognition = pipeline(Tasks.ocr_recognition, model='damo/cv_convnextTiny_ocr-recognition-general_damo')
+    process_image_to_text(img_path, output_txt, ocr_det_model=ocr_detection, ocr_recog_model=ocr_recognition)
