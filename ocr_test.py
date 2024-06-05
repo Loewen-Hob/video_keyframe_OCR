@@ -1,5 +1,6 @@
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
+import os
 import numpy as np
 import cv2
 import math
@@ -61,7 +62,7 @@ def order_point(coor):
     sort_points = sort_points.reshape([4, 2]).astype('float32')
     return sort_points
 
-def process_image_to_text(img_path, output_txt='output.txt', ocr_det_model=None, ocr_recog_model=None):
+def process_image_to_text(img_path, output_txt='output.txt', ocr_detection=None, ocr_recognition=None):
     try:
         # Read the image from the path
         image_full = cv2.imread(img_path)
@@ -93,7 +94,6 @@ def process_image_to_text(img_path, output_txt='output.txt', ocr_det_model=None,
                 # Write the processed text to the file
                 file.write(text + ' ')
 
-
         print(f"OCR process completed and results are saved to '{output_txt}'.")
     except Exception as e:
         # In case of any error during the process, write an empty file
@@ -101,9 +101,66 @@ def process_image_to_text(img_path, output_txt='output.txt', ocr_det_model=None,
         with open(output_txt, 'w') as file:
             pass  # Creating an empty file
 
-if __name__ == '__main__':
-    img_path = '/root/bishe/image_OCR/禁用tset.jpg'
-    output_txt = '/root/bishe/image_OCR/output.txt'
+def save_first_frame(video_path, output_image_path):
+    # 打开视频文件
+    cap = cv2.VideoCapture(video_path)
+    
+    # 检查视频是否成功打开
+    if not cap.isOpened():
+        print("Error: Could not open video.")
+        return None
+
+    # 读取第一帧
+    ret, frame = cap.read()
+    cap.release()
+    
+    if ret:
+        cv2.imwrite(output_image_path, frame)
+        print(f"First frame saved to {output_image_path}")
+        return output_image_path
+    else:
+        print("Error: Could not read the first frame.")
+        return None
+
+def process_video_directory(video_dir, OCR_output_directory, keyframe_output_directory):
+
+    # Initialize the OCR models
     ocr_detection = pipeline(Tasks.ocr_detection, model='damo/cv_resnet18_ocr-detection-line-level_damo')
     ocr_recognition = pipeline(Tasks.ocr_recognition, model='damo/cv_convnextTiny_ocr-recognition-general_damo')
-    process_image_to_text(img_path, output_txt, ocr_det_model=ocr_detection, ocr_recog_model=ocr_recognition)
+
+    # 有两层文件夹，第一层文件夹为视频文件夹，第二层文件夹为视频文件，使用两个循环分别处理
+    for video_folder in os.listdir(video_dir):
+        video_folder_path = os.path.join(video_dir, video_folder)
+        if os.path.isdir(video_folder_path):
+            for video_file in os.listdir(video_folder_path):
+                video_file_path = os.path.join(video_folder_path, video_file)
+                video_name = os.path.splitext(os.path.basename(video_file_path))[0]
+                output_image_path = os.path.join(keyframe_output_directory,video_folder, f"{video_name}_keyframe.jpg")
+                output_txt_path = os.path.join(OCR_output_directory, video_folder, f"{video_name}.txt")
+                if not os.path.exists(output_image_path):
+                    # 新建文件夹
+                    if not os.path.exists(os.path.join(keyframe_output_directory,video_folder)):
+                        os.makedirs(os.path.join(keyframe_output_directory,video_folder))
+                    if not os.path.exists(os.path.join(OCR_output_directory,video_folder)):
+                        os.makedirs(os.path.join(OCR_output_directory,video_folder))
+                    img_path, output_txt_path = process_single_video(video_file_path, output_image_path=output_image_path, output_txt_path = output_txt_path, ocr_detection=ocr_detection, ocr_recognition=ocr_recognition)
+                    print(f"Processed video {video_name}.") 
+                else:
+                    print(f"Key frame {output_image_path} already exists, skipping.")
+
+def process_single_video(video_path, output_image_path, output_txt_path, ocr_detection, ocr_recognition):
+
+    # Save the first frame of the video
+    img_path = save_first_frame(video_path, output_image_path)
+    if img_path is None:
+        raise Exception("Failed to extract key frame.")
+
+    # Process the image to extract text
+    process_image_to_text(img_path, output_txt_path, ocr_detection=ocr_detection, ocr_recognition=ocr_recognition)
+    return img_path, output_txt_path
+
+if __name__ == '__main__':
+    video_directory = '/root/bishe/end_output/虚假宣传/segment_video_0.8'  # Specify your video directory
+    OCR_output_directory = '/root/bishe/end_output/虚假宣传/OCR'
+    keyframe_output_directory = '/root/bishe/end_output/虚假宣传/keyframe'  # Specify your output directory
+    process_video_directory(video_directory, OCR_output_directory, keyframe_output_directory)
